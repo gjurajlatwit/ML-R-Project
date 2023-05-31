@@ -1,0 +1,289 @@
+---
+title: "ML Project"
+author: "Luis Gjuraj & Lo-Badal Burch"
+date: "4/11/2022"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+#install.packages("rjson")
+library(rjson)
+library(class)
+#install.packages('caret')
+library(caret)
+```
+# Let's do some R coding.
+
+Let's load in the data first. Change the pathing to your data.
+```{r}
+lol_data <- read.csv("data ml/games.csv")
+lol_data$t2_win <- lol_data$winner-1
+lol_champ <- read.csv("data ml/champion2_better.csv")
+lol_spell <- read.csv("data ml/summoner_spell.csv")
+```
+Let's turn JSON files into dataframes. We did that in python.(R not good...)
+
+We can see that we have 3 datasets ready for use. The 
+first one, which we called lol_data, has a lot of useful information about 
+how the game progresses, and important events that either team 1 or team 2 won.
+We will further use this data using different models to determine the win or loss
+of a game based on these parameters.
+
+We also have lol_champ data that gives us insight on each champion, by pairing
+their id to their names, and lol_spell dataset that does the same thing for 
+summoner spells used.
+
+Each champion has different traits and skills, and each spell has different 
+uses and effects.
+```{r}
+head(lol_data)
+names(lol_data)
+head(lol_champ)
+head(lol_spell)
+``` 
+
+Looks good, but we don't need a game ID or season. Let's take those out.
+
+We can see that in the lol_data dataset, we have ban choices for every player.
+What those choices basically mean, is that before every game, each player gets
+to choose a champion that they don't want to play against. That is a crucial 
+part of the game, but a lot of players don't know about champions that will
+put them at a disadvantage. So, using KNN, we will help them figure out which 
+champion to ban at the start!
+```{r}
+lol_data <- lol_data[,-c(1,2,4)]
+head(lol_data)
+
+colnames(lol_data)
+lol_ban <- lol_data[,c(29:34,54:58)]
+head(lol_ban)
+```
+
+1) KNN
+
+At first we tried separating champion ids and ban picks using r, but it wasn't
+easy to append them to each other in r. The reason why we want to do that is 
+because we want a dataframe of 2 columns. One will be the ids of the champion
+the player is using, and the other will be the id of the champion the player
+wants to ban. Having a dataset with 2 sets of variables makes the use of KNN
+possible for us in this case.
+
+Now that we have usable datasets, let us show off our data analysis skills!
+
+First off, let's get suggestions on what champion to ban based on the champion
+we want to play as.
+
+We do not have any data about our champions' abilities and statistics to find
+out which other champions would be a bad match to face off against, so we will
+simply take someone elses opinion. By that, I mean everyone else who plays the
+same champion that we are. We will be using K-nearest neighbors for this one!
+
+The first step will be using our costumized dataset for our KNN implementation.
+Check out the python script to see how we made it!
+
+We then split the data into training (80% of the whole dataset )and test data(
+remaining 20%).
+
+We then created a model using the training data, and we tested it out on our 
+test data. The results were pretty good.
+
+```{r}
+# We are using Champion ID for our X axis and their Ban picks for our Y axis, 
+# because that is what we want to predict.
+
+KNN_data <- read.csv("data ml/KNN_data.csv")
+#KNN_data
+v <-  sort(sample(1:nrow(KNN_data),.8*nrow(KNN_data)))
+knntrain <- KNN_data[v,]
+knntest <- KNN_data[-v,]
+```
+
+We wanted to try different k values, and this is how we did it.
+
+With the KNN models up and running, we test them out and find the best!
+
+
+```{r}
+#KNN.pred <- knn(knntrain,knntest,knntrain$ban_id,k=1)
+#mean(knntest$ban_id != KNN.pred)
+#table(KNN.pred, knntest$ban_id)
+```
+
+```{r}
+#KNN.pred <- knn(knntrain,knntest,knntrain$ban_id,k=3)
+#mean(knntest$ban_id != KNN.pred)
+#table(KNN.pred, knntest$ban_id)
+```
+
+```{r}
+KNN.pred <- knn(knntrain,knntest,knntrain$ban_id,k=5)
+mean(knntest$ban_id != KNN.pred)
+table(KNN.pred, knntest$ban_id)
+```
+
+```{r}
+#KNN.pred <- knn(knntrain,knntest,knntrain$ban_id,k=7)
+#mean(knntest$ban_id != KNN.pred)
+#table(KNN.pred, knntest$ban_id)
+```
+
+```{r}
+#KNN.pred <- knn(knntrain,knntest,knntrain$ban_id,k=15)
+#mean(knntest$ban_id != KNN.pred)
+#table(KNN.pred, knntest$ban_id)
+```
+
+Then we tried to make a usable function, in which we give the name of the 
+champion we use, and we get the name of the champion we should ban.
+```{r}
+KNN.pred
+predictions <- data.frame("Champion" = knntest$champion_id, 
+                         "Ban_prediction" = KNN.pred, 
+                         "True_ban" = knntest$ban_id )
+```
+
+```{r}
+lol_champ[1,5]
+rownames(lol_champ) <- lol_champ$id
+lol_champ <- lol_champ[order(lol_champ$id),]
+champ_name <- function (id){
+   return(lol_champ$name[lol_champ$id == id])
+}
+result <- function(name){
+  return(lol_champ$id[lol_champ$name== name])
+}
+result('Darius')
+champ_name(122) # our id translator
+Suggestion <- function(name){
+  id <- result(name)
+  return(champ_name(predictions$Ban_prediction[predictions$Champion == id]))
+}
+Suggestion('Ashe') #Gives us an array of suggestions :D, don't pay attention to 
+# red text
+```
+2) Logistic Regression
+
+Now that we selected a champion and banned a fearsome foe, let's get to the in-
+game events. Which events will be the ones that will set us up for victory?
+
+In order to find out, let's make correlation test and look at the results. After 
+finding out which data is more likely to impact the result of the game, we 
+take into consideration those that have more than 30% correlation, p-values 
+associated that are more than .05. The correlation values tell us how strongly
+each variable impacts the ending result, while a low p-value shows us that 
+data is consistent enough to reject the null hypothesis.
+```{r}
+cor(lol_data[c(-1,-3)],lol_data$t2_win) > .3
+cor(lol_data$firstRiftHerald,lol_data$firstTower)
+vi <- sort(sample(1:nrow(lol_data),.8*nrow(lol_data)))
+loltrain <- lol_data[vi,]
+loltest <- lol_data[-vi,]
+logic_reg <- glm(t2_win ~ firstInhibitor + firstTower + firstDragon+ t2_towerKills + t2_inhibitorKills + t1_towerKills + t2_baronKills + t1_baronKills, data = loltrain, family = binomial)
+summary(logic_reg)
+```
+
+Here we plot a graph of the logistic regression function we made. If the predicted
+value was more than .5 (which gave us the better result when we look at the 
+confusion matrix), then that means that team 2 is most likely a winner. Else,
+team 1 is.
+
+```{r}
+logic_prediction <- predict(logic_reg, loltest, type = "response")
+modelingtest = ifelse(logic_prediction < 0.5, "low", "high") 
+table(modelingtest, loltest$t2_win)
+predicted_data <- data.frame(prob_win = logic_reg$fitted.values, actual_win = loltest$t2_win)
+predicted_data <- predicted_data[order(predicted_data$prob_win,decreasing=FALSE),]
+predicted_data$rank <- 1:nrow(predicted_data)
+library(ggplot2)
+library(cowplot)
+ggplot(data= predicted_data, aes(x = rank, y= prob_win)) +
+  geom_point(alpha=1,shape=4,stroke=2) +
+  xlab("Index") +
+  ylab("Predicted probability of team 2 winning")
+```
+
+3) Decision Tree
+```{r}
+library(tree)
+v = sample(1:nrow(lol_data),0.8*nrow(lol_data))
+train <- sample(1:nrow(lol_data),0.8*nrow(lol_data))
+test <- lol_data[-train, "winner"]
+```
+
+```{r}
+tree.lol_win <- tree(winner ~ .-t2_win, lol_data, subset = train)
+summary(tree.lol_win)
+plot(tree.lol_win)
+text(tree.lol_win , pretty = 0)
+```
+Note: Numbers correspond to which team wins (ie. closer to 1, then team 1 wins
+closer to 2, then team 2 wins)
+
+While it is no surprise that towerKills are the most important features, this is
+quite boring because you cannot win a game without destroying towers. So let's 
+remove towerKills and see what has an impact on the game outside of tower kills.
+```{r}
+tree.lol_win <- tree(winner ~ .-t2_win-t2_towerKills-t1_towerKills, 
+                     lol_data, subset = train)
+summary(tree.lol_win)
+plot(tree.lol_win)
+text(tree.lol_win , pretty = 0)
+```
+Ok this is slightly more interesting, but a winning team MUST take at least 1
+inhibitor AND 5 towers. The most interesting features to come out of this are
+firstTower & firstInhibitor (which correspond with which team took the first
+tower and first inhibitor), these are more interesting features because it 
+indicates that going for the first tower or inhibitor could mean you are more 
+likely to win. According to this tree, getting firstTower tower means you are 
+more likely to win, but getting firstInhibitor means you are actually more
+likely to LOSE (this is somewhat coutnerintiuive, but likely due to inhibitors
+spawning minions which are harder to kill but provide more resources, which can
+allow comebacks to happen)
+
+Let's remove inhibitorKills because those are also needed in order to win 
+(unless the enemy surrenders).
+```{r}
+tree.lol_win <- tree(winner ~ .-t2_win-t2_towerKills-t1_towerKills
+                     -t2_inhibitorKills-t1_inhibitorKills, lol_data, 
+                     subset = train)
+summary(tree.lol_win)
+plot(tree.lol_win)
+text(tree.lol_win , pretty = 0)
+```
+Awesome, so firstInhibitor seems to be important but so does baronKills and
+firstTower. Let's push this one step forward and take out firstInhibitor to see
+the features buried below the usual game winning givens.
+```{r}
+tree.lol_win <- tree(winner ~ .-t2_win-t2_towerKills-t1_towerKills
+                     -t2_inhibitorKills-t1_inhibitorKills-firstInhibitor, 
+                     lol_data, subset = train)
+summary(tree.lol_win)
+plot(tree.lol_win)
+text(tree.lol_win , pretty = 0)
+```
+This is interesting! dragonKills shoots up beyond firstTower and baronKills in 
+the decision tree, which makes it arguably more important than firstTower as an
+objective! Another interesting thing is that gameDuration finally comes into
+the decision tree, which means that closing out games early/holding on for late
+game is an important factor (but obviously less so than the game winning 
+objectives)
+
+```{r}
+cv.win <- cv.tree(tree.lol_win)
+plot(cv.win$size, cv.win$dev, type = "b")
+```
+6 is still the best (original), but 2/3 are surprisingly strong for how simple
+they are; so, let's plot one below and see what it looks like. 
+
+```{r}
+prune.win <- prune.tree(tree.lol_win , best = 3)
+plot(prune.win)
+text(prune.win , pretty = 0)
+```
+3 returns a very accurate pruned tree, but the original longer tree of 6 
+terminal nodes is still the best tree (this is not a huge surprise because the 
+original tree is small to begin with, but it is interesting to see how important
+firstInhibitor is a feature as it accounts for the vast majority of improvement
+of the model according to the pruning plot above)
